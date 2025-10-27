@@ -26,25 +26,6 @@ limitations under the License.
   <?define ProgramFilesFolder = "ProgramFilesFolder" ?>
   {{ end }}
   <Fragment>
-    <!-- Custom actions to set installation folders -->
-    <CustomAction Id="WixSetDefaultPerUserFolder" Property="WixPerUserFolder" Value="[LocalAppDataFolder]Columnar\[ApplicationFolderName]" Execute="immediate" />
-    <CustomAction Id="WixSetDefaultPerMachineFolder" Property="WixPerMachineFolder" Value="[$(var.ProgramFilesFolder)]Columnar\[ApplicationFolderName]" Execute="immediate" />
-    <CustomAction Id="WixSetPerUserFolder" Property="INSTALLDIR" Value="[WixPerUserFolder]" Execute="immediate" />
-    <CustomAction Id="WixSetPerMachineFolder" Property="INSTALLDIR" Value="[WixPerMachineFolder]" Execute="immediate" />
-
-    <InstallExecuteSequence>
-      <Custom Action="WixSetDefaultPerUserFolder" Before="CostFinalize" />
-      <Custom Action="WixSetDefaultPerMachineFolder" After="WixSetDefaultPerUserFolder" />
-      <Custom Action="WixSetPerUserFolder" After="WixSetDefaultPerMachineFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS="" OR (ALLUSERS=2 AND (NOT Privileged)))</Custom>
-      <Custom Action="WixSetPerMachineFolder" After="WixSetPerUserFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS=1 OR (ALLUSERS=2 AND Privileged))</Custom>
-    </InstallExecuteSequence>
-    <InstallUISequence>
-      <Custom Action="WixSetDefaultPerUserFolder" Before="CostFinalize" />
-      <Custom Action="WixSetDefaultPerMachineFolder" After="WixSetDefaultPerUserFolder" />
-      <Custom Action="WixSetPerUserFolder" After="WixSetDefaultPerMachineFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS="" OR (ALLUSERS=2 AND (NOT Privileged)))</Custom>
-      <Custom Action="WixSetPerMachineFolder" After="WixSetPerUserFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS=1 OR (ALLUSERS=2 AND Privileged))</Custom>
-    </InstallUISequence>
-
     <UI Id="WixUI_Advanced">
         <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
         <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
@@ -108,6 +89,25 @@ limitations under the License.
     <Property Id="WixAppFolder" Value="WixPerUserFolder" />
     <Property Id="ALLUSERS" Value="2" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+
+    <!-- Custom actions to set installation folders -->
+    <CustomAction Id="WixSetDefaultPerUserFolder" Property="WixPerUserFolder" Value="[LocalAppDataFolder]Columnar\[ApplicationFolderName]" Execute="immediate" />
+    <CustomAction Id="WixSetDefaultPerMachineFolder" Property="WixPerMachineFolder" Value="[$(var.ProgramFilesFolder)]Columnar\[ApplicationFolderName]" Execute="immediate" />
+    <CustomAction Id="WixSetPerUserFolder" Property="INSTALLDIR" Value="[WixPerUserFolder]" Execute="immediate" />
+    <CustomAction Id="WixSetPerMachineFolder" Property="INSTALLDIR" Value="[WixPerMachineFolder]" Execute="immediate" />
+
+    <InstallExecuteSequence>
+      <Custom Action="WixSetDefaultPerUserFolder" Before="CostFinalize" />
+      <Custom Action="WixSetDefaultPerMachineFolder" After="WixSetDefaultPerUserFolder" />
+      <Custom Action="WixSetPerUserFolder" After="WixSetDefaultPerMachineFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS="" OR (ALLUSERS=2 AND (NOT Privileged)))</Custom>
+      <Custom Action="WixSetPerMachineFolder" After="WixSetPerUserFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS=1 OR (ALLUSERS=2 AND Privileged))</Custom>
+    </InstallExecuteSequence>
+    <InstallUISequence>
+      <Custom Action="WixSetDefaultPerUserFolder" Before="CostFinalize" />
+      <Custom Action="WixSetDefaultPerMachineFolder" After="WixSetDefaultPerUserFolder" />
+      <Custom Action="WixSetPerUserFolder" After="WixSetDefaultPerMachineFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS="" OR (ALLUSERS=2 AND (NOT Privileged)))</Custom>
+      <Custom Action="WixSetPerMachineFolder" After="WixSetPerUserFolder">ACTION="INSTALL" AND INSTALLDIR="" AND (ALLUSERS=1 OR (ALLUSERS=2 AND Privileged))</Custom>
+    </InstallUISequence>
 
     <UIRef Id="WixUI_Common" />
 
