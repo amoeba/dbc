@@ -129,47 +129,48 @@ func applyProjectRegistries(list DriversList) error {
 	return nil
 }
 
-// applyProjectRegistriesFromCWD loads the registry overrides from a dbc.toml in
-// the current working directory (if present) and applies them to the
+// applyProjectRegistriesFromCWD loads the registry overrides from a driver list
+// in the current working directory (if present) and applies them to the
 // process-wide client, so read-only discovery commands (search, info, docs)
 // resolve drivers against the same registry set that `dbc add`/`dbc sync` use
 // in the same project. This keeps behavior consistent between project-level and
 // global config: a project that adds registries or sets replace_defaults
 // affects what those commands can see, not just add/sync.
 //
-// A missing dbc.toml is not an error — these commands must still work outside a
-// project, falling back to the global + built-in default registries. A dbc.toml
-// that exists but can't be decoded is a hard error (with its path) so the user
-// isn't silently shown the wrong registry set. Unlike add/sync, this read is
-// not taken under the project lock: these commands never mutate dbc.toml, so a
-// best-effort snapshot is acceptable.
+// Discovery prefers pyproject.toml with a [tool.dbc] section over dbc.toml.
+// A missing driver list is not an error — these commands must still work outside
+// a project, falling back to the global + built-in default registries. A driver
+// list that exists but can't be decoded is a hard error (with its path) so the
+// user isn't silently shown the wrong registry set. Unlike add/sync, this read
+// is not taken under the project lock: these commands never mutate the driver
+// list, so a best-effort snapshot is acceptable.
 //
 // DBC_BASE_URL overrides all registry configuration, so when it's set this is a
-// no-op that never touches dbc.toml — otherwise a malformed project file would
-// block these commands even though DBC_BASE_URL is the documented escape hatch
-// for recovering from broken registry config.
+// no-op that never touches the driver list — otherwise a malformed project file
+// would block these commands even though DBC_BASE_URL is the documented escape
+// hatch for recovering from broken registry config.
 func applyProjectRegistriesFromCWD() error {
 	if os.Getenv("DBC_BASE_URL") != "" {
 		return nil
 	}
 
-	p, err := driverListPath("./dbc.toml")
+	src, err := discoverDriverList(".")
 	if err != nil {
 		return err
 	}
 
-	f, err := os.Open(p)
-	if err != nil {
+	// Check that the source file exists before attempting to decode.
+	// A missing driver list is not an error for read-only commands.
+	if _, err := os.Stat(src.Path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("error opening driver list at %s: %w", p, err)
+		return fmt.Errorf("error opening driver list at %s: %w", src.Path, err)
 	}
-	defer f.Close()
 
-	var list DriversList
-	if err := toml.NewDecoder(f).Decode(&list); err != nil {
-		return fmt.Errorf("error decoding driver list at %s: %w", p, err)
+	list, err := openAndDecodeFromSource(src)
+	if err != nil {
+		return fmt.Errorf("error decoding driver list at %s: %w", src.Path, err)
 	}
 	return applyProjectRegistries(list)
 }

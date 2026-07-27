@@ -29,7 +29,6 @@ import (
 	"github.com/columnar-tech/dbc/config"
 	"github.com/columnar-tech/dbc/internal/fslock"
 	"github.com/columnar-tech/dbc/internal/jsonschema"
-	"github.com/pelletier/go-toml/v2"
 )
 
 var msgStyle = lipgloss.NewStyle().Faint(true)
@@ -124,13 +123,14 @@ func (m addModel) Init() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		p, err := driverListPath(m.Path)
+		src, err := resolveDriverListSource(m.Path)
 		if err != nil {
 			return err
 		}
+		p := src.Path
 
 		// Take the project lock briefly to read a consistent snapshot of
-		// dbc.toml, then release it before the registry lookup so a slow
+		// the driver list, then release it before the registry lookup so a slow
 		// network fetch doesn't hold the lock. The lock is reacquired
 		// below for the final merge/write phase. Without this short-lock
 		// read, a concurrent writer using os.Create could expose partial
@@ -140,20 +140,12 @@ func (m addModel) Init() tea.Cmd {
 		if err != nil {
 			return fmt.Errorf("another dbc operation is in progress: %w", err)
 		}
-		f, err := os.Open(p)
+		list, err := openAndDecodeFromSource(src)
 		if err != nil {
-			readLock.Release()
-			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("error opening driver list: %s doesn't exist\nDid you run `dbc init`?", m.Path)
-			}
-			return fmt.Errorf("error opening driver list at %s: %w", m.Path, err)
-		}
-		if err := toml.NewDecoder(f).Decode(&m.list); err != nil {
-			f.Close()
 			readLock.Release()
 			return err
 		}
-		f.Close()
+		m.list = list
 		readLock.Release()
 
 		if err := applyProjectRegistries(m.list); err != nil {
@@ -247,24 +239,18 @@ func (m addModel) Init() tea.Cmd {
 		}
 		defer lock.Release()
 
-		var current DriversList
-		if rf, err := os.Open(p); err == nil {
-			if decodeErr := toml.NewDecoder(rf).Decode(&current); decodeErr != nil {
-				rf.Close()
-				return fmt.Errorf("error re-reading driver list under lock: %w", decodeErr)
-			}
-			rf.Close()
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("error re-reading driver list at %s: %w", m.Path, err)
+		current, err := openAndDecodeFromSource(src)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("error re-reading driver list under lock: %w", err)
 		}
 
 		// If the registry configuration changed while the (unlocked)
 		// registry lookup was in flight, the drivers we just validated
 		// may not exist under the new registry set. Abort so the caller
 		// can retry against the new configuration rather than write a
-		// potentially-inconsistent dbc.toml.
+		// potentially-inconsistent driver list.
 		if registriesChanged(m.list, current) {
-			return fmt.Errorf("dbc.toml registry configuration changed while resolving drivers; please retry `dbc add`")
+			return fmt.Errorf("driver list registry configuration changed while resolving drivers; please retry `dbc add`")
 		}
 
 		// Merge ONLY the driver entries this invocation actually added or
@@ -279,13 +265,7 @@ func (m addModel) Init() tea.Cmd {
 			current.Drivers[spec.Name] = m.list.Drivers[spec.Name]
 		}
 
-		wf, err := os.Create(p)
-		if err != nil {
-			return fmt.Errorf("error creating file %s: %w", p, err)
-		}
-		defer wf.Close()
-
-		if err := toml.NewEncoder(wf).Encode(current); err != nil {
+		if err := writeDriverListToSource(src, current); err != nil {
 			return err
 		}
 		result += "\nuse `dbc sync` to install the drivers in the list"

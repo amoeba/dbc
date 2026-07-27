@@ -147,14 +147,11 @@ type driversListMsg struct {
 
 func (s syncModel) Init() tea.Cmd {
 	return func() tea.Msg {
-		p, err := filepath.Abs(s.Path)
+		src, err := resolveDriverListSource(s.Path)
 		if err != nil {
 			return err
 		}
-
-		if filepath.Ext(p) == "" {
-			p = filepath.Join(p, "dbc.toml")
-		}
+		p := src.Path
 
 		lockPath := filepath.Join(filepath.Dir(p), ".dbc.project.lock")
 		lock, err := fslock.Acquire(lockPath, 10*time.Second)
@@ -163,7 +160,7 @@ func (s syncModel) Init() tea.Cmd {
 		}
 		defer lock.Release()
 
-		drivers, err := loadDriverList(p)
+		drivers, err := loadDriverList(src)
 		if err != nil {
 			return err
 		}
@@ -174,13 +171,13 @@ func (s syncModel) Init() tea.Cmd {
 	}
 }
 
-func loadDriverList(path string) (DriversList, error) {
-	list, err := openAndDecodeDriverList(path)
+func loadDriverList(src driverListSource) (DriversList, error) {
+	list, err := openAndDecodeFromSource(src)
 	if err != nil {
 		return DriversList{}, err
 	}
 	if len(list.Drivers) == 0 {
-		return DriversList{}, fmt.Errorf("no drivers found in driver list `%s`", path)
+		return DriversList{}, fmt.Errorf("no drivers found in driver list `%s`", src.Path)
 	}
 	return list, nil
 }
@@ -368,7 +365,7 @@ func (s syncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return s, cmd
 	case driversListMsg:
 		s.Path = msg.path
-		s.LockFilePath = strings.TrimSuffix(s.Path, filepath.Ext(s.Path)) + ".lock"
+		s.LockFilePath = filepath.Join(filepath.Dir(s.Path), "dbc.lock")
 		s.list = msg.list
 		if err := applyProjectRegistries(s.list); err != nil {
 			return s, errCmd("%v", err)
