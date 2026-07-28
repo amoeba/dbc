@@ -27,7 +27,7 @@ import (
 
 type RemoveCmd struct {
 	Driver string `arg:"positional,required" help:"Driver to remove"`
-	Path   string `arg:"-p" placeholder:"FILE" default:"./dbc.toml" help:"Driver list to remove from"`
+	Path   string `arg:"-p" placeholder:"FILE" help:"Driver list to remove from"`
 	Json   bool   `arg:"--json" help:"Print output as JSON instead of plaintext"`
 }
 
@@ -70,6 +70,9 @@ func (m removeModel) Init() tea.Cmd {
 	return func() tea.Msg {
 		src, err := resolveDriverListSource(m.Path)
 		if err != nil {
+			return err
+		}
+		if err := rejectPyprojectMutation(src); err != nil {
 			return err
 		}
 		p := src.Path

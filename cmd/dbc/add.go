@@ -64,7 +64,7 @@ func driverListPath(path string) (string, error) {
 
 type AddCmd struct {
 	Driver []string `arg:"positional,required" help:"One or more drivers to add, optionally with a version constraint (for example: mysql, mysql=0.1.0, mysql>=1,<2)"`
-	Path   string   `arg:"-p" placeholder:"FILE" default:"./dbc.toml" help:"Driver list to add to"`
+	Path   string   `arg:"-p" placeholder:"FILE" help:"Driver list to add to"`
 	Pre    bool     `arg:"--pre" help:"Allow pre-release versions implicitly"`
 	Json   bool     `arg:"--json" help:"Print output as JSON instead of plaintext"`
 }
@@ -125,6 +125,9 @@ func (m addModel) Init() tea.Cmd {
 	return func() tea.Msg {
 		src, err := resolveDriverListSource(m.Path)
 		if err != nil {
+			return err
+		}
+		if err := rejectPyprojectMutation(src); err != nil {
 			return err
 		}
 		p := src.Path

@@ -17,7 +17,9 @@ limitations under the License.
 # Using a Driver List
 
 dbc can create and manage lists of drivers using a [driver list](../concepts/driver_list.md) file.
-By default, a driver list lives in `dbc.toml`, but it can also be embedded in a [`pyproject.toml`](#using-pyprojecttoml) or use a [custom filename](#using-a-custom-filename).
+
+By default, a driver list lives in `dbc.toml` though you can use a [custom filename](#using-a-custom-filename).
+Alternatively, a driver list can be stored inside [`pyproject.toml`](#using-pyprojecttoml) using the [PEP-518](https://peps.python.org/pep-0518/) convention for tool metadata.
 
 !!! note
 
@@ -27,10 +29,10 @@ A driver list is ideal for checking into version control alongside your project 
 
 ## Discovery
 
-When you run any dbc command without an explicit `--path` flag (or when the path points to a file that doesn't exist yet), dbc automatically discovers the driver list by **walking up the directory tree** from the current working directory. At each level it checks (in order):
+When you run a dbc command without an explicit `--path` flag, dbc automatically discovers the driver list by walking up the directory tree from the current working directory. At each level it checks (in order):
 
-1. `pyproject.toml` — if it exists **and** contains a `[tool.dbc]` section
-2. `dbc.toml`
+1. `dbc.toml`
+2. `pyproject.toml` — if it exists **and** contains a `[tool.dbc]` section
 
 The first match wins. This means you can run dbc commands from any subdirectory of your project:
 
@@ -38,8 +40,9 @@ The first match wins. This means you can run dbc commands from any subdirectory 
 $ ls
 pyproject.toml  src/  tests/
 $ cd src/utils/
-$ dbc add mysql        # finds pyproject.toml at project root
-added mysql to driver list
+$ dbc sync             # finds pyproject.toml at project root
+✓ duckdb-1.4.0
+Done!
 ```
 
 If no driver list is found all the way up to the filesystem root, dbc falls back to `./dbc.toml` in the current directory (and will prompt you to run `dbc init`).
@@ -47,6 +50,8 @@ If no driver list is found all the way up to the filesystem root, dbc falls back
 !!! note
 
     When you provide an explicit `--path` pointing to an existing file (e.g., `dbc add -p ./dbc.toml mysql`), that file is used directly — auto-discovery is skipped.
+
+    When both `dbc.toml` and `pyproject.toml` are present in the same directory, `dbc.toml` takes precedence and `[tool.dbc]` in `pyproject.toml` is ignored for discovery.
 
 ## Creating a Driver List
 
@@ -223,25 +228,9 @@ removed 'mysql' from driver list
 
 ## Using `pyproject.toml`
 
-If your project already has a `pyproject.toml` (common in Python projects), you can embed dbc's driver list directly inside it under a `[tool.dbc]` section, following the [PEP 518](https://peps.python.org/pep-0518/) convention for tool-specific metadata. This avoids adding a separate `dbc.toml` to your project root.
+If your project already has a `pyproject.toml` (which is common in Python projects), you can manually embed dbc's driver list directly inside it under a `[tool.dbc]` section, following the [PEP 518](https://peps.python.org/pep-0518/) convention for tool-specific metadata. dbc will fall back to reading this metadata when it can't find a `dbc.toml`.
 
-### Initializing
-
-To add a `[tool.dbc]` section to your existing (or new) `pyproject.toml`:
-
-```console
-$ dbc init --pyproject
-```
-
-This creates or appends to `pyproject.toml`:
-
-```toml
-[tool.dbc.drivers]
-```
-
-If `pyproject.toml` doesn't exist yet, it will be created. If it already exists, the `[tool.dbc.drivers]` section is appended without modifying any existing content.
-
-### Format
+### Example
 
 The structure under `[tool.dbc]` mirrors a standalone `dbc.toml` exactly. Everything that works in `dbc.toml` works under `[tool.dbc]`:
 
@@ -250,68 +239,10 @@ The structure under `[tool.dbc]` mirrors a standalone `dbc.toml` exactly. Everyt
 name = "my-python-project"
 version = "1.0.0"
 
-[[tool.dbc.registries]]
-url = "https://custom-registry.example.com"
-name = "Custom"
-
 [tool.dbc.drivers]
-
-[tool.dbc.drivers.duckdb]
-version = '=1.4.0'
-
-[tool.dbc.drivers.postgresql]
-prerelease = 'allow'
+duckdb = { version = "=1.4.0" }
+postgresql = { prerelease = "allow" }
 ```
-
-### Format Preservation
-
-When dbc modifies the `[tool.dbc]` section (via `dbc add` or `dbc remove`), it preserves all content outside that section — including comments, formatting, key ordering, and other `[tool.*]` sections. Only the `[tool.dbc]` section itself is rewritten.
-
-### Workflow Example
-
-```console
-$ cat pyproject.toml
-[project]
-name = "my-project"
-
-[tool.dbc.drivers]
-[tool.dbc.drivers.duckdb]
-
-$ dbc add postgresql
-added postgresql to driver list
-use `dbc sync` to install the drivers in the list
-
-$ dbc sync
-✓ duckdb-1.4.0
-✓ postgresql-1.2.0
-Done!
-```
-
-### Lockfile
-
-The lockfile is always named `dbc.lock`, regardless of whether the driver list lives in `dbc.toml` or `pyproject.toml`. This ensures:
-
-- The lockfile clearly belongs to dbc (not ambiguous with other tools)
-- Migrating from `dbc.toml` to `pyproject.toml` (or vice versa) is seamless — no lockfile rename needed
-- Multiple tools can each have their own lockfile without collision
-
-### Explicit Path
-
-You can also point commands directly at a `pyproject.toml`:
-
-```console
-$ dbc add --path pyproject.toml mysql
-$ dbc sync --path pyproject.toml
-```
-
-### Migrating from `dbc.toml`
-
-To migrate an existing `dbc.toml` to `pyproject.toml`:
-
-1. Run `dbc init --pyproject` to create the `[tool.dbc]` section
-2. Move the contents of your `dbc.toml` under `[tool.dbc]`, prefixing table headers with `tool.dbc.` (e.g. `[drivers.mysql]` becomes `[tool.dbc.drivers.mysql]`)
-3. Delete `dbc.toml`
-4. Your existing `dbc.lock` continues to work as-is
 
 ## Using a Custom Filename
 

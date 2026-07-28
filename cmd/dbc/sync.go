@@ -37,7 +37,7 @@ import (
 )
 
 type SyncCmd struct {
-	Path               string             `arg:"-p" placeholder:"FILE" default:"./dbc.toml" help:"Driver list to sync from"`
+	Path               string             `arg:"-p" placeholder:"FILE" help:"Driver list to sync from"`
 	Level              config.ConfigLevel `arg:"-l" help:"Config level to install to (user, system)"`
 	NoVerify           bool               `arg:"--no-verify" help:"Allow installation of drivers without a signature file"`
 	Json               bool               `arg:"--json" help:"Print output as JSON instead of plaintext"`

@@ -27,8 +27,8 @@ When no explicit `--path` to an existing file is provided, dbc walks up the dire
 
 | Priority | File | Condition |
 |----------|------|-----------|
-| 1 | `pyproject.toml` | Must contain a `[tool.dbc]` section |
-| 2 | `dbc.toml` | Must exist |
+| 1 | `dbc.toml` | Must exist |
+| 2 | `pyproject.toml` | Must contain a `[tool.dbc]` section |
 
 The search stops at the first directory that contains either file. If nothing is found, dbc defaults to `./dbc.toml` in the current directory.
 
@@ -36,15 +36,15 @@ When `--path` points to an existing file, that file is used directly and discove
 
 The lockfile is always `dbc.lock` in the same directory as the resolved driver list.
 
-A malformed `pyproject.toml` (one that exists but has TOML syntax errors) is reported as an error rather than silently skipped.
+A malformed `pyproject.toml` (one that exists but has TOML syntax errors) is reported as an error rather than silently skipped, unless `dbc.toml` is present in the same directory and takes precedence.
 
 ## `pyproject.toml` Support
 
-As an alternative to a standalone `dbc.toml`, dbc supports embedding the driver list inside a `pyproject.toml` under the `[tool.dbc]` table, following the [PEP 518](https://peps.python.org/pep-0518/) `[tool]` metadata convention. The structure under `[tool.dbc]` is identical to a standalone `dbc.toml`.
+As an alternative to a standalone `dbc.toml`, dbc supports reading a manually embedded driver list inside a `pyproject.toml` under the `[tool.dbc]` table, following the [PEP 518](https://peps.python.org/pep-0518/) `[tool]` metadata convention. The structure under `[tool.dbc]` is identical to a standalone `dbc.toml`.
 
-**Discovery precedence**: When both `pyproject.toml` (with a `[tool.dbc]` section) and `dbc.toml` exist in the same directory, `pyproject.toml` takes precedence during auto-detection.
+**Discovery precedence**: When both `dbc.toml` and `pyproject.toml` (with a `[tool.dbc]` section) exist in the same directory, `dbc.toml` takes precedence during auto-detection.
 
-**Format preservation**: When dbc writes to `pyproject.toml`, only the `[tool.dbc]` section is modified. All other content — comments, formatting, key ordering, and other tool sections — is preserved exactly as-is.
+**Read-only**: dbc never writes to `pyproject.toml`. `dbc init`, `dbc add`, and `dbc remove` only modify standalone driver-list files such as `dbc.toml`.
 
 **Lockfile**: The lockfile is always `dbc.lock`, regardless of which file holds the driver list. See the [guide](../guides/driver_list.md#using-pyprojecttoml) for details.
 

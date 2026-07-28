@@ -137,7 +137,8 @@ func applyProjectRegistries(list DriversList) error {
 // global config: a project that adds registries or sets replace_defaults
 // affects what those commands can see, not just add/sync.
 //
-// Discovery prefers pyproject.toml with a [tool.dbc] section over dbc.toml.
+// Discovery prefers dbc.toml over pyproject.toml with a [tool.dbc] section in
+// the same directory.
 // A missing driver list is not an error — these commands must still work outside
 // a project, falling back to the global + built-in default registries. A driver
 // list that exists but can't be decoded is a hard error (with its path) so the

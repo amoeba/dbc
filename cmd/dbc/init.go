@@ -26,20 +26,18 @@ import (
 )
 
 type InitCmd struct {
-	Path      string `arg:"positional" default:"./dbc.toml" help:"File to create (or pyproject.toml to add [tool.dbc])"`
-	Pyproject bool   `arg:"--pyproject" help:"Add [tool.dbc] section to pyproject.toml instead of creating dbc.toml"`
-	Json      bool   `arg:"--json" help:"Print output as JSON instead of plaintext"`
+	Path string `arg:"positional" default:"./dbc.toml" help:"Driver list file to create"`
+	Json bool   `arg:"--json" help:"Print output as JSON instead of plaintext"`
 }
 
 func (c InitCmd) GetModel() tea.Model {
-	return initModel{Path: c.Path, pyproject: c.Pyproject, jsonOutput: c.Json}
+	return initModel{Path: c.Path, jsonOutput: c.Json}
 }
 
 type initDoneMsg struct{ path string }
 
 type initModel struct {
 	Path         string
-	pyproject    bool
 	jsonOutput   bool
 	resolvedPath string
 
@@ -57,13 +55,12 @@ func (m initModel) Err() error  { return m.err }
 
 func (m initModel) Init() tea.Cmd {
 	return func() tea.Msg {
-		if m.pyproject {
-			return m.initPyproject()
-		}
-
 		p, err := driverListPath(m.Path)
 		if err != nil {
 			return err
+		}
+		if filepath.Base(p) == "pyproject.toml" {
+			return fmt.Errorf("dbc init does not modify pyproject.toml; create dbc.toml or add [tool.dbc] manually")
 		}
 
 		_, err = os.Stat(p)
@@ -81,56 +78,6 @@ func (m initModel) Init() tea.Cmd {
 
 		return initDoneMsg{path: p}
 	}
-}
-
-const initialPyprojectSection = `[tool.dbc.drivers]
-`
-
-func (m initModel) initPyproject() tea.Msg {
-	// Determine target path: if user provided an explicit path use it,
-	// otherwise default to ./pyproject.toml.
-	target := m.Path
-	if target == defaultDriverListPath {
-		target = "./pyproject.toml"
-	}
-
-	p, err := filepath.Abs(target)
-	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
-	}
-
-	if err = os.MkdirAll(filepath.Dir(p), 0777); err != nil {
-		return fmt.Errorf("error creating directory for %s: %w", p, err)
-	}
-
-	data, err := os.ReadFile(p)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Create a new pyproject.toml with just the [tool.dbc] section
-			if err := os.WriteFile(p, []byte(initialPyprojectSection), 0666); err != nil {
-				return fmt.Errorf("error creating file %s: %w", p, err)
-			}
-			return initDoneMsg{path: p}
-		}
-		return fmt.Errorf("error reading %s: %w", p, err)
-	}
-
-	// Check if [tool.dbc] already exists
-	if hasPyprojectDBCSection(p) {
-		return fmt.Errorf("[tool.dbc] section already exists in %s", p)
-	}
-
-	// Append the section to the existing file
-	content := string(data)
-	if len(content) > 0 && content[len(content)-1] != '\n' {
-		content += "\n"
-	}
-	content += "\n" + initialPyprojectSection
-
-	if err := os.WriteFile(p, []byte(content), 0666); err != nil {
-		return fmt.Errorf("error writing %s: %w", p, err)
-	}
-	return initDoneMsg{path: p}
 }
 
 func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

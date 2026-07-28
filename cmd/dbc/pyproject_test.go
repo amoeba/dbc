@@ -23,11 +23,12 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/columnar-tech/dbc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDiscoverDriverList_PrefersPyproject(t *testing.T) {
+func TestDiscoverDriverList_PrefersDBC(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create both dbc.toml and pyproject.toml with [tool.dbc]
@@ -43,8 +44,8 @@ name = "myproject"
 
 	src, err := discoverDriverList(dir)
 	require.NoError(t, err)
-	assert.True(t, src.IsPyproject)
-	assert.Equal(t, filepath.Join(dir, "pyproject.toml"), src.Path)
+	assert.False(t, src.IsPyproject)
+	assert.Equal(t, filepath.Join(dir, "dbc.toml"), src.Path)
 }
 
 func TestDiscoverDriverList_FallsToDBC(t *testing.T) {
@@ -101,6 +102,21 @@ this is not valid toml!!!
 	assert.Contains(t, err.Error(), "error parsing")
 }
 
+func TestDiscoverDriverList_DBCIgnoresMalformedPyproject(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dbc.toml"), []byte(`[drivers]
+`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(`[tool.dbc
+this is not valid toml!!!
+`), 0644))
+
+	src, err := discoverDriverList(dir)
+	require.NoError(t, err)
+	assert.False(t, src.IsPyproject)
+	assert.Equal(t, filepath.Join(dir, "dbc.toml"), src.Path)
+}
+
 func TestDiscoverDriverList_WalksUpTree(t *testing.T) {
 	// Create a project structure: root/sub/deep/
 	root := t.TempDir()
@@ -119,12 +135,12 @@ func TestDiscoverDriverList_WalksUpTree(t *testing.T) {
 	assert.Equal(t, filepath.Join(root, "dbc.toml"), src.Path)
 }
 
-func TestDiscoverDriverList_WalksUpTree_PyprojectPreferred(t *testing.T) {
+func TestDiscoverDriverList_WalksUpTree_DBCPreferredInSameDirectory(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "sub")
 	require.NoError(t, os.MkdirAll(sub, 0755))
 
-	// Put both in root — pyproject.toml with [tool.dbc] should win
+	// Put both in root — standalone dbc.toml should win
 	require.NoError(t, os.WriteFile(filepath.Join(root, "dbc.toml"), []byte(`[drivers]
 `), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte(`[tool.dbc.drivers]
@@ -132,8 +148,8 @@ func TestDiscoverDriverList_WalksUpTree_PyprojectPreferred(t *testing.T) {
 
 	src, err := discoverDriverList(sub)
 	require.NoError(t, err)
-	assert.True(t, src.IsPyproject)
-	assert.Equal(t, filepath.Join(root, "pyproject.toml"), src.Path)
+	assert.False(t, src.IsPyproject)
+	assert.Equal(t, filepath.Join(root, "dbc.toml"), src.Path)
 }
 
 func TestDiscoverDriverList_ClosestWins(t *testing.T) {
@@ -212,158 +228,6 @@ line-length = 88
 	assert.Contains(t, err.Error(), "[tool.dbc] section not found")
 }
 
-func TestWritePyprojectDriverList(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "pyproject.toml")
-
-	// Create an existing pyproject.toml with other content
-	initial := `[project]
-name = "myproject"
-version = "1.0.0"
-
-[tool.dbc.drivers]
-`
-	require.NoError(t, os.WriteFile(path, []byte(initial), 0644))
-
-	list := DriversList{
-		Drivers: map[string]driverSpec{
-			"mysql": {},
-		},
-	}
-
-	err := writePyprojectDriverList(path, list)
-	require.NoError(t, err)
-
-	// Verify the file was written and can be read back
-	readBack, err := openAndDecodePyprojectDriverList(path)
-	require.NoError(t, err)
-	assert.Contains(t, readBack.Drivers, "mysql")
-
-	// Verify the [project] section is preserved
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "myproject")
-}
-
-func TestWritePyprojectDriverList_PreservesComments(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "pyproject.toml")
-
-	// A realistic pyproject.toml with comments, various sections, and formatting
-	initial := `# My awesome project
-[project]
-name = "myproject"
-version = "1.0.0"
-description = "A test project"
-
-# Python dependencies
-dependencies = [
-    "requests>=2.28",
-    "pandas",
-]
-
-# Ruff linter configuration
-[tool.ruff]
-line-length = 88
-target-version = "py311"
-
-# DBC driver configuration
-[tool.dbc.drivers]
-[tool.dbc.drivers.duckdb]
-version = '=1.4.0'
-
-# Pytest settings
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-`
-	require.NoError(t, os.WriteFile(path, []byte(initial), 0644))
-
-	list := DriversList{
-		Drivers: map[string]driverSpec{
-			"mysql":      {},
-			"postgresql": {},
-		},
-	}
-
-	err := writePyprojectDriverList(path, list)
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	content := string(data)
-
-	// Verify comments are preserved
-	assert.Contains(t, content, "# My awesome project")
-	assert.Contains(t, content, "# Python dependencies")
-	assert.Contains(t, content, "# Ruff linter configuration")
-	assert.Contains(t, content, "# Pytest settings")
-
-	// Verify other sections are preserved
-	assert.Contains(t, content, `name = "myproject"`)
-	assert.Contains(t, content, "line-length = 88")
-	assert.Contains(t, content, `testpaths = ["tests"]`)
-
-	// Verify the drivers were updated
-	readBack, err := openAndDecodePyprojectDriverList(path)
-	require.NoError(t, err)
-	assert.Contains(t, readBack.Drivers, "mysql")
-	assert.Contains(t, readBack.Drivers, "postgresql")
-	// Old driver should be gone (we replaced the whole section)
-	assert.NotContains(t, readBack.Drivers, "duckdb")
-}
-
-func TestWritePyprojectDriverList_SectionAtEnd(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "pyproject.toml")
-
-	// [tool.dbc] at the very end of file (no trailing section)
-	initial := `[project]
-name = "myproject"
-
-[tool.dbc.drivers]
-[tool.dbc.drivers.old-driver]
-`
-	require.NoError(t, os.WriteFile(path, []byte(initial), 0644))
-
-	list := DriversList{
-		Drivers: map[string]driverSpec{
-			"new-driver": {},
-		},
-	}
-
-	err := writePyprojectDriverList(path, list)
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
-	content := string(data)
-
-	assert.Contains(t, content, `name = "myproject"`)
-
-	readBack, err := openAndDecodePyprojectDriverList(path)
-	require.NoError(t, err)
-	assert.Contains(t, readBack.Drivers, "new-driver")
-	assert.NotContains(t, readBack.Drivers, "old-driver")
-}
-
-func TestMarshalDBCSection(t *testing.T) {
-	list := DriversList{
-		Drivers: map[string]driverSpec{
-			"mysql": {},
-		},
-	}
-
-	result, err := marshalDBCSection(list)
-	require.NoError(t, err)
-
-	content := string(result)
-	// Should have tool.dbc prefix on table headers
-	assert.Contains(t, content, "[tool.dbc.drivers]")
-	assert.Contains(t, content, "[tool.dbc.drivers.mysql]")
-	// Should NOT have bare [drivers] headers
-	assert.NotContains(t, content, "\n[drivers]")
-}
-
 func TestLockfilePath(t *testing.T) {
 	t.Run("dbc.toml", func(t *testing.T) {
 		src := driverListSource{Path: "/project/dbc.toml", IsPyproject: false}
@@ -420,7 +284,7 @@ func TestResolveDriverListSource(t *testing.T) {
 		assert.Equal(t, dbcpath, src.Path)
 	})
 
-	t.Run("non-existent file with default path triggers discovery", func(t *testing.T) {
+	t.Run("omitted path triggers discovery", func(t *testing.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[tool.dbc.drivers]\n"), 0644))
 
@@ -429,24 +293,45 @@ func TestResolveDriverListSource(t *testing.T) {
 		require.NoError(t, os.Chdir(dir))
 		defer os.Chdir(origDir)
 
-		src, err := resolveDriverListSource(defaultDriverListPath)
+		src, err := resolveDriverListSource("")
 		require.NoError(t, err)
-		assert.True(t, src.IsPyproject, "default path with no dbc.toml should auto-discover pyproject.toml")
+		assert.True(t, src.IsPyproject, "omitted path should auto-discover pyproject.toml")
+	})
+
+	t.Run("omitted path prefers dbc.toml when both files exist", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "dbc.toml"), []byte("[drivers]\n"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[tool.dbc.drivers]\n"), 0644))
+
+		origDir, err := os.Getwd()
+		require.NoError(t, err)
+		require.NoError(t, os.Chdir(dir))
+		defer os.Chdir(origDir)
+
+		src, err := resolveDriverListSource("")
+		require.NoError(t, err)
+		assert.False(t, src.IsPyproject, "omitted path should prefer dbc.toml over pyproject.toml")
+		expected, err := filepath.Abs(filepath.Join(dir, "dbc.toml"))
+		require.NoError(t, err)
+		expected, err = filepath.EvalSymlinks(expected)
+		require.NoError(t, err)
+		actual, err := filepath.EvalSymlinks(src.Path)
+		require.NoError(t, err)
+		assert.Equal(t, expected, actual)
 	})
 }
 
-func TestAddWithPyproject(t *testing.T) {
+func TestAddWithPyprojectFails(t *testing.T) {
 	dir := t.TempDir()
 	pyprojectPath := filepath.Join(dir, "pyproject.toml")
 
-	// Create pyproject.toml with [tool.dbc] section
-	require.NoError(t, os.WriteFile(pyprojectPath, []byte(`[project]
+	initial := `[project]
 name = "myproject"
 
 [tool.dbc.drivers]
-`), 0644))
+`
+	require.NoError(t, os.WriteFile(pyprojectPath, []byte(initial), 0644))
 
-	// Use explicit path to pyproject.toml
 	m := AddCmd{Path: pyprojectPath, Driver: []string{"test-driver-1"}}.GetModelCustom(
 		testBaseModel())
 
@@ -458,30 +343,73 @@ name = "myproject"
 
 	result, err := p.Run()
 	require.NoError(t, err)
-	assert.Equal(t, 0, result.(HasStatus).Status())
+	assert.Equal(t, 1, result.(HasStatus).Status())
+	assert.Contains(t, result.(HasStatus).Err().Error(), "does not modify pyproject.toml")
 
-	// Verify the driver was added to pyproject.toml
 	data, err := os.ReadFile(pyprojectPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "myproject")
-
-	// Verify we can read it back
-	list, err := openAndDecodePyprojectDriverList(pyprojectPath)
-	require.NoError(t, err)
-	assert.Contains(t, list.Drivers, "test-driver-1")
+	assert.Equal(t, initial, string(data))
 }
 
-func TestRemoveWithPyproject(t *testing.T) {
+func TestAddWithOmittedPathPrefersDBCOverPyproject(t *testing.T) {
 	dir := t.TempDir()
 	pyprojectPath := filepath.Join(dir, "pyproject.toml")
+	dbcPath := filepath.Join(dir, "dbc.toml")
 
-	// Create pyproject.toml with a driver already present
+	require.NoError(t, os.WriteFile(dbcPath, []byte(`[drivers]
+`), 0644))
 	require.NoError(t, os.WriteFile(pyprojectPath, []byte(`[project]
 name = "myproject"
 
 [tool.dbc.drivers]
-[tool.dbc.drivers.test-driver-1]
 `), 0644))
+
+	drivers, err := getTestDriverRegistry()
+	require.NoError(t, err)
+
+	origDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	defer os.Chdir(origDir)
+
+	m := AddCmd{Driver: []string{"test-driver-1"}}.GetModelCustom(baseModel{
+		getDriverRegistry: func() ([]dbc.Driver, error) {
+			return drivers, nil
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	var out bytes.Buffer
+	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(&out), tea.WithContext(ctx))
+
+	result, err := p.Run()
+	require.NoError(t, err)
+	if status, ok := result.(HasStatus); ok && status.Err() != nil {
+		require.NoError(t, status.Err())
+	}
+
+	list, err := openAndDecodeDriverList(dbcPath)
+	require.NoError(t, err)
+	assert.Contains(t, list.Drivers, "test-driver-1")
+
+	pyprojectData, err := os.ReadFile(pyprojectPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(pyprojectData), "test-driver-1")
+}
+
+func TestRemoveWithPyprojectFails(t *testing.T) {
+	dir := t.TempDir()
+	pyprojectPath := filepath.Join(dir, "pyproject.toml")
+
+	initial := `[project]
+name = "myproject"
+
+[tool.dbc.drivers]
+[tool.dbc.drivers.test-driver-1]
+`
+	require.NoError(t, os.WriteFile(pyprojectPath, []byte(initial), 0644))
 
 	m := RemoveCmd{Path: pyprojectPath, Driver: "test-driver-1"}.GetModelCustom(
 		testBaseModel())
@@ -494,62 +422,24 @@ name = "myproject"
 
 	result, err := p.Run()
 	require.NoError(t, err)
-	assert.Equal(t, 0, result.(HasStatus).Status())
+	assert.Equal(t, 1, result.(HasStatus).Status())
+	assert.Contains(t, result.(HasStatus).Err().Error(), "does not modify pyproject.toml")
 
-	// Verify the driver was removed
-	list, err := openAndDecodePyprojectDriverList(pyprojectPath)
-	require.NoError(t, err)
-	assert.NotContains(t, list.Drivers, "test-driver-1")
-
-	// Verify [project] section is preserved
 	data, err := os.ReadFile(pyprojectPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), "myproject")
+	assert.Equal(t, initial, string(data))
 }
 
-func TestInitPyproject(t *testing.T) {
+func TestInitRejectsPyprojectPath(t *testing.T) {
 	dir := t.TempDir()
-
-	// Change to temp dir for the test (init --pyproject uses cwd)
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	defer os.Chdir(origDir)
-
-	m := InitCmd{Path: defaultDriverListPath, Pyproject: true}.GetModel()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	var out bytes.Buffer
-	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(&out), tea.WithContext(ctx))
-
-	result, err := p.Run()
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.(HasStatus).Status())
-
-	// Verify pyproject.toml was created
-	data, err := os.ReadFile(filepath.Join(dir, "pyproject.toml"))
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "[tool.dbc.drivers]")
-}
-
-func TestInitPyproject_ExistingFile(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create an existing pyproject.toml without [tool.dbc]
 	pyprojectPath := filepath.Join(dir, "pyproject.toml")
-	require.NoError(t, os.WriteFile(pyprojectPath, []byte(`[project]
+
+	initial := `[project]
 name = "myproject"
 version = "1.0.0"
-`), 0644))
-
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	defer os.Chdir(origDir)
-
-	m := InitCmd{Path: defaultDriverListPath, Pyproject: true}.GetModel()
+`
+	require.NoError(t, os.WriteFile(pyprojectPath, []byte(initial), 0644))
+	m := InitCmd{Path: pyprojectPath}.GetModel()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -559,69 +449,10 @@ version = "1.0.0"
 
 	result, err := p.Run()
 	require.NoError(t, err)
-	assert.Equal(t, 0, result.(HasStatus).Status())
+	assert.Equal(t, 1, result.(HasStatus).Status())
+	assert.Contains(t, result.(HasStatus).Err().Error(), "does not modify pyproject.toml")
 
-	// Verify [tool.dbc] was appended
 	data, err := os.ReadFile(pyprojectPath)
 	require.NoError(t, err)
-	content := string(data)
-	assert.Contains(t, content, "[project]")
-	assert.Contains(t, content, "myproject")
-	assert.Contains(t, content, "[tool.dbc.drivers]")
-}
-
-func TestInitPyproject_ExplicitPath(t *testing.T) {
-	dir := t.TempDir()
-	subdir := filepath.Join(dir, "subproject")
-	require.NoError(t, os.MkdirAll(subdir, 0755))
-
-	pypath := filepath.Join(subdir, "pyproject.toml")
-
-	// dbc init path/to/pyproject.toml --pyproject should write to that path
-	m := InitCmd{Path: pypath, Pyproject: true}.GetModel()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	var out bytes.Buffer
-	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(&out), tea.WithContext(ctx))
-
-	result, err := p.Run()
-	require.NoError(t, err)
-	assert.Equal(t, 0, result.(HasStatus).Status())
-
-	// Verify the file was created at the explicit path
-	data, err := os.ReadFile(pypath)
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "[tool.dbc.drivers]")
-}
-
-func TestInitPyproject_AlreadyHasDBCSection(t *testing.T) {
-	dir := t.TempDir()
-
-	pyprojectPath := filepath.Join(dir, "pyproject.toml")
-	require.NoError(t, os.WriteFile(pyprojectPath, []byte(`[project]
-name = "myproject"
-
-[tool.dbc.drivers]
-[tool.dbc.drivers.mysql]
-`), 0644))
-
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	defer os.Chdir(origDir)
-
-	m := InitCmd{Path: defaultDriverListPath, Pyproject: true}.GetModel()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	var out bytes.Buffer
-	p := tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(&out), tea.WithContext(ctx))
-
-	result, err := p.Run()
-	require.NoError(t, err)
-	// Should fail because [tool.dbc] already exists
-	assert.Equal(t, 1, result.(HasStatus).Status())
+	assert.Equal(t, initial, string(data))
 }
