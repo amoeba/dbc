@@ -499,6 +499,9 @@ func (m progressiveInstallModel) startCurrentItem() (tea.Model, tea.Cmd) {
 	if m.isLocal {
 		return m, func() tea.Msg { return localInstallMsg{} }
 	}
+	// Pre-populate conflictingInfo for conflict detection (e.g. a different version
+	// already installed). inspectInstallTarget returns a non-empty DriverInfo even
+	// when alreadyInstalled is false, so we check di.ID rather than the bool.
 	if di, _ := inspectInstallTarget(m.cfg, item); di.ID != "" {
 		m.conflictingInfo = di
 	}
@@ -514,7 +517,7 @@ func (m progressiveInstallModel) completeCurrent(status jsonschema.InstallStatus
 			Drivers: m.Drivers,
 		})
 	}
-	if m.index >= len(m.installItems)-1 {
+	if m.index == len(m.installItems)-1 {
 		return m, tea.Quit
 	}
 	m.index++
@@ -681,8 +684,12 @@ func (m progressiveInstallModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			driverPath := m.installedDriverInfo.Driver.Shared.Get(config.PlatformTuple())
 			if driverPath != "" {
 				chksum, err := checksum(driverPath)
-				if err != nil && m.jsonOutput {
-					return m, errCmd("checksum_failed: %w", err)
+				if err != nil {
+					if m.jsonOutput {
+						return m, errCmd("checksum_failed: %w", err)
+					}
+					// In plaintext mode, checksum errors are non-fatal; the install
+					// succeeds without embedding a checksum in the result.
 				}
 				if err == nil {
 					status.Checksum = chksum
@@ -723,7 +730,7 @@ func (m progressiveInstallModel) View() tea.View {
 	if m.status != 0 || m.jsonOutput {
 		return tea.NewView("")
 	}
-	if len(m.Drivers) > 1 && len(m.installItems) == 0 {
+	if len(m.installItems) == 0 {
 		return tea.NewView("Determining drivers to install...")
 	}
 
