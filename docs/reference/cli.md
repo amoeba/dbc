@@ -86,21 +86,21 @@ $ dbc search [PATTERN]
 
 ## install
 
-Install a driver.
+Install one or more drivers.
 
 To install multiple versions of the same driver on the same system, it's recommend to use `ADBC_DRIVER_PATH`. See [Config Level](config_level.md).
 
 <h3>Usage</h3>
 
 ```console
-$ dbc install [OPTIONS] <DRIVER>
+$ dbc install [OPTIONS] <DRIVER> [<DRIVER> ...]
 ```
 
 <h3>Arguments</h3>
 
-`DRIVER`
+`DRIVER ...`
 
-:   Name of the driver to install. This can be a plain driver name like `bigquery`, a driver name with a version constraint like `bigquery=1.0.0` or `bigquery>=1,<2`, or a path to a local driver archive.
+:   Names of the drivers to install. Each can be a plain driver name like `bigquery`, a driver name with a version constraint like `bigquery=1.0.0` or `bigquery>=1,<2`, or a path to a local driver archive.
 
     For the full version-constraint syntax and more examples, see [Installing Drivers: Version Constraints](../guides/installing.md#version-constraints). For local archives, see [Installing Drivers: From Local Archive](../guides/installing.md#from-local-archive).
 
@@ -112,7 +112,7 @@ $ dbc install [OPTIONS] <DRIVER>
 
 `--level LEVEL`, `-l LEVEL`
 
-:   The configuration level to install the driver to (`user`, or `system`). See [Config Level](config_level.md).
+:   The configuration level to install the drivers to (`user`, or `system`). See [Config Level](config_level.md).
 
 `--no-verify`
 

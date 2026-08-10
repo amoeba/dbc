@@ -233,7 +233,7 @@ func (m baseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 type cmds struct {
 	Search     *SearchCmd       `arg:"subcommand" help:"Search for a driver"`
-	Install    *InstallCmd      `arg:"subcommand" help:"Install a driver"`
+	Install    *InstallCmd      `arg:"subcommand" help:"Install one or more drivers"`
 	Uninstall  *UninstallCmd    `arg:"subcommand" help:"Uninstall a driver"`
 	List       *ListCmd         `arg:"subcommand" help:"List installed drivers"`
 	Info       *InfoCmd         `arg:"subcommand" help:"Get information about a driver"`

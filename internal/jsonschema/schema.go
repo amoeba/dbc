@@ -40,8 +40,8 @@ type Envelope struct {
 // Install
 // -----------------------------------------------------------------------------
 
-// InstallStatus is the final JSON payload emitted after a driver installation
-// attempt. It corresponds to the inline struct in cmd/dbc/install.go.
+// InstallStatus is the final JSON payload emitted for each driver installation
+// attempt.
 type InstallStatus struct {
 	// Status is the outcome: "installed", "already installed", or "error".
 	Status string `json:"status"`
@@ -61,7 +61,7 @@ type InstallStatus struct {
 
 // InstallProgressEvent is a single line in the NDJSON progress stream emitted
 // during a driver installation. Clients should consume a stream of these events
-// until install.complete is received.
+// until install.complete has been received for every requested driver.
 type InstallProgressEvent struct {
 	// Event identifies the progress step. Valid values:
 	// "download.start", "download.progress", "download.complete",
@@ -69,8 +69,10 @@ type InstallProgressEvent struct {
 	// "verify.start", "verify.complete", "verify.checksum.ok", "verify.checksum.mismatch",
 	// "manifest.create", "install.complete".
 	Event string `json:"event"`
-	// Driver is the driver identifier being installed.
+	// Driver is the driver currently being installed.
 	Driver string `json:"driver"`
+	// Drivers are all driver inputs requested by this install invocation.
+	Drivers []string `json:"drivers,omitempty"`
 	// Bytes is the number of bytes transferred so far (download events only).
 	Bytes int64 `json:"bytes,omitempty"`
 	// Total is the expected total byte count (download events only).

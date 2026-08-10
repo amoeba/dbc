@@ -46,6 +46,48 @@ func (suite *SubcommandTestSuite) TestSync() {
 	suite.validateOutput("✓ test-driver-1-1.1.0 already installed\r\n\rDone!\r\n", "", suite.runCmd(m))
 }
 
+func (suite *SubcommandTestSuite) TestSyncMultipleDriversWithPostInstallMessages() {
+	driverListPath := filepath.Join(suite.tempdir, "dbc.toml")
+	err := os.WriteFile(driverListPath, []byte(`[drivers]
+[drivers.test-driver-post-install-1]
+[drivers.test-driver-post-install-2]
+`), 0o644)
+	suite.Require().NoError(err)
+
+	m := SyncCmd{Path: driverListPath}.GetModelCustom(baseModel{
+		getDriverRegistry: getTestDriverRegistryWithPostInstall,
+		downloadPkg:       downloadTestPkg,
+	})
+	out := strings.ReplaceAll(suite.runCmdRendered(m), "\r", "")
+
+	status1 := "✓ test-driver-post-install-1-1.0.0"
+	status2 := "✓ test-driver-post-install-2-1.0.0"
+	message := "✓   post-install: Set TEST_DRIVER_POST_INSTALL=1 before loading this driver"
+	status1Index := strings.Index(out, status1)
+	status2Index := strings.Index(out, status2)
+	suite.Require().GreaterOrEqual(status1Index, 0, "missing first driver status in output: %q", out)
+	suite.Require().GreaterOrEqual(status2Index, 0, "missing second driver status in output: %q", out)
+	suite.Equal(2, strings.Count(out, message), "each driver should print its post-install message once")
+
+	firstStatus, secondStatus := status1Index, status2Index
+	if firstStatus > secondStatus {
+		firstStatus, secondStatus = secondStatus, firstStatus
+	}
+	firstMessageOffset := strings.Index(out[firstStatus:], message)
+	suite.Require().GreaterOrEqual(firstMessageOffset, 0, "missing post-install message after first driver")
+	firstMessage := firstStatus + firstMessageOffset
+	secondMessageOffset := strings.Index(out[secondStatus:], message)
+	suite.Require().GreaterOrEqual(secondMessageOffset, 0, "missing post-install message after second driver")
+	secondMessage := secondStatus + secondMessageOffset
+	suite.Less(firstStatus, firstMessage)
+	suite.Less(firstMessage, secondStatus, "post-install message should stay grouped with its driver")
+	suite.Less(secondStatus, secondMessage)
+
+	suite.FileExists(filepath.Join(suite.tempdir, "test-driver-post-install-1.toml"))
+	suite.FileExists(filepath.Join(suite.tempdir, "test-driver-post-install-2.toml"))
+	suite.FileExists(filepath.Join(suite.tempdir, "dbc.lock"))
+}
+
 func (suite *SubcommandTestSuite) TestSyncWithVersion() {
 	tests := []struct {
 		driver          string

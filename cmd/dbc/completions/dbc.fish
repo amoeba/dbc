@@ -28,7 +28,7 @@ complete -c dbc -n '__fish_dbc_needs_command' -l version -d 'Show version'
 complete -c dbc -n '__fish_dbc_needs_command' -l quiet -s q -d 'Suppress all output'
 
 # Subcommands
-complete -f -c dbc -n '__fish_dbc_needs_command' -a 'install' -d 'Install a driver'
+complete -f -c dbc -n '__fish_dbc_needs_command' -a 'install' -d 'Install one or more drivers'
 complete -f -c dbc -n '__fish_dbc_needs_command' -a 'uninstall' -d 'Uninstall a driver'
 complete -f -c dbc -n '__fish_dbc_needs_command' -a 'list' -d 'List all currently installed drivers'
 complete -f -c dbc -n '__fish_dbc_needs_command' -a 'init' -d 'Create new driver list'

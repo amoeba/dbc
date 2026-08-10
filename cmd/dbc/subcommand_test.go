@@ -62,6 +62,27 @@ func getTestDriverRegistry() ([]dbc.Driver, error) {
 	return drivers.Drivers, nil
 }
 
+func getTestDriverRegistryWithPostInstall() ([]dbc.Driver, error) {
+	drivers, err := getTestDriverRegistry()
+	if err != nil {
+		return nil, err
+	}
+	for _, driver := range drivers {
+		if driver.Path != "test-driver-manifest-only" {
+			continue
+		}
+		for i := 1; i <= 2; i++ {
+			postInstallDriver := driver
+			postInstallDriver.Path = fmt.Sprintf("test-driver-post-install-%d", i)
+			postInstallDriver.Title = fmt.Sprintf("Test Driver Post Install %d", i)
+			postInstallDriver.Desc = "This is a test driver with a post-install message"
+			drivers = append(drivers, postInstallDriver)
+		}
+		break
+	}
+	return drivers, nil
+}
+
 func testBaseModel() baseModel {
 	return baseModel{getDriverRegistry: getTestDriverRegistry, downloadPkg: downloadTestPkg}
 }
@@ -77,6 +98,8 @@ func downloadTestPkg(pkg dbc.PkgInfo) (*os.File, error) {
 		return os.Open(filepath.Join("testdata", "test-driver-2.tar.gz"))
 	case "test-driver-manifest-only":
 		return os.Open(filepath.Join("testdata", "test-driver-manifest-only.tar.gz"))
+	case "test-driver-post-install-1", "test-driver-post-install-2":
+		return os.Open(filepath.Join("testdata", pkg.Driver.Path+".tar.gz"))
 	case "test-driver-no-sig":
 		return os.Open(filepath.Join("testdata", "test-driver-no-sig.tar.gz"))
 	case "test-driver-invalid-manifest":
@@ -207,6 +230,26 @@ func (suite *SubcommandTestSuite) runCmd(m tea.Model) string {
 
 	var err error
 	m, err = prog.Run()
+	prog.Wait()
+	suite.Require().NoError(err)
+	suite.Equal(0, m.(HasStatus).Status(), "The command exited with a non-zero status.")
+
+	var extra string
+	if fo, ok := m.(HasFinalOutput); ok {
+		extra = fo.FinalOutput()
+	}
+	return ansi.Strip(out.String() + extra)
+}
+
+func (suite *SubcommandTestSuite) runCmdRendered(m tea.Model) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var out bytes.Buffer
+	prog = tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(&out), tea.WithContext(ctx))
+	defer func() { prog = nil }()
+
+	m, err := prog.Run()
 	prog.Wait()
 	suite.Require().NoError(err)
 	suite.Equal(0, m.(HasStatus).Status(), "The command exited with a non-zero status.")

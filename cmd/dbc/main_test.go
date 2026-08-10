@@ -132,7 +132,8 @@ func TestCmdStatus(t *testing.T) {
 func TestInstallHelpMentionsVersionConstraints(t *testing.T) {
 	out := renderSubcommandHelp(t, "install", "-h")
 
-	require.Contains(t, out, "Driver to install, optionally with a version constraint")
+	require.Contains(t, out, "Drivers to install. Each driver can include an optional version constraint")
+	require.Contains(t, out, "dbc install mysql postgresql")
 	require.Contains(t, out, `dbc install "mysql=0.1.0"`)
 	require.Contains(t, out, `dbc install "mysql>=1,<2"`)
 	require.Contains(t, out, "https://docs.columnar.tech/dbc/guides/installing/#version-constraints")

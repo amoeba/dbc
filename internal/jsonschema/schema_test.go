@@ -16,6 +16,7 @@ package jsonschema_test
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/columnar-tech/dbc/internal/jsonschema"
@@ -154,15 +155,16 @@ func TestInstallProgressEvent(t *testing.T) {
 		{
 			name: "install complete",
 			in: jsonschema.InstallProgressEvent{
-				Event:  "install.complete",
-				Driver: "sqlite",
+				Event:   "install.complete",
+				Driver:  "sqlite",
+				Drivers: []string{"sqlite", "duckdb"},
 			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := roundTrip(t, tc.in)
-			if got != tc.in {
+			if !reflect.DeepEqual(got, tc.in) {
 				t.Errorf("round-trip mismatch:\n want %+v\n  got %+v", tc.in, got)
 			}
 		})

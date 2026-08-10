@@ -39,6 +39,182 @@ func (suite *SubcommandTestSuite) TestInstall() {
 	suite.driverIsInstalled("test-driver-1", true)
 }
 
+func (suite *SubcommandTestSuite) TestInstallMultipleDrivers() {
+	m := InstallCmd{
+		Drivers: []string{"test-driver-1=1.0.0", "test-driver-only-pre=0.9.0-alpha.1"},
+		Level:   suite.configLevel,
+		Pre:     true,
+	}.GetModelCustom(testBaseModel())
+
+	suite.Equal(
+		"\nInstalled test-driver-1 1.0.0 to "+suite.Dir()+
+			"\nInstalled test-driver-only-pre 0.9.0-alpha.1 to "+suite.Dir(),
+		suite.runCmd(m),
+	)
+	suite.driverIsInstalledWithVersion("test-driver-1", "1.0.0", true)
+	suite.driverIsInstalledWithVersion("test-driver-only-pre", "0.9.0-alpha.1", true)
+
+	m = InstallCmd{
+		Drivers: []string{"test-driver-1=1.0.0", "test-driver-only-pre=0.9.0-alpha.1"},
+		Level:   suite.configLevel,
+		Pre:     true,
+	}.GetModelCustom(testBaseModel())
+	suite.Equal(
+		"\nDriver test-driver-1 1.0.0 already installed at "+suite.Dir()+
+			"\nDriver test-driver-only-pre 0.9.0-alpha.1 already installed at "+suite.Dir(),
+		suite.runCmd(m),
+	)
+}
+
+func (suite *SubcommandTestSuite) TestInstallMultipleDriversWithPostInstallMessages() {
+	m := InstallCmd{
+		Drivers: []string{"test-driver-manifest-only", "test-driver-post-install-1"},
+		Level:   suite.configLevel,
+	}.GetModelCustom(baseModel{getDriverRegistry: getTestDriverRegistryWithPostInstall, downloadPkg: downloadTestPkg})
+
+	suite.Equal(
+		"\nInstalled test-driver-manifest-only 1.0.0 to "+suite.Dir()+
+			"\n\nMust have libtest_driver installed to load this driver"+
+			"\nInstalled test-driver-post-install-1 1.0.0 to "+suite.Dir()+
+			"\n\nSet TEST_DRIVER_POST_INSTALL=1 before loading this driver",
+		suite.runCmd(m),
+	)
+	suite.driverIsInstalled("test-driver-manifest-only", false)
+	suite.driverIsInstalled("test-driver-post-install-1", true)
+}
+
+func (suite *SubcommandTestSuite) TestInstallDuplicateDriverInput() {
+	base := testBaseModel()
+	download := base.downloadPkg
+	downloads := 0
+	base.downloadPkg = func(pkg dbc.PkgInfo) (*os.File, error) {
+		downloads++
+		return download(pkg)
+	}
+
+	m := InstallCmd{
+		Drivers: []string{"test-driver-1", "test-driver-1"},
+		Level:   suite.configLevel,
+	}.GetModelCustom(base)
+
+	suite.Equal(
+		"\nInstalled test-driver-1 1.1.0 to "+suite.Dir(),
+		suite.runCmd(m),
+	)
+	suite.Equal(1, downloads, "duplicate input should resolve to one installation")
+	suite.driverIsInstalledWithVersion("test-driver-1", "1.1.0", true)
+}
+
+func (suite *SubcommandTestSuite) TestInstallDuplicateDriverConstraintsAreIntersected() {
+	base := testBaseModel()
+	download := base.downloadPkg
+	downloads := 0
+	base.downloadPkg = func(pkg dbc.PkgInfo) (*os.File, error) {
+		downloads++
+		return download(pkg)
+	}
+
+	m := InstallCmd{
+		Drivers: []string{"test-driver-1>=1.0.0", "test-driver-1<1.1.0"},
+		Level:   suite.configLevel,
+	}.GetModelCustom(base)
+
+	suite.Equal(
+		"\nInstalled test-driver-1 1.0.0 to "+suite.Dir(),
+		suite.runCmd(m),
+	)
+	suite.Equal(1, downloads)
+	suite.driverIsInstalledWithVersion("test-driver-1", "1.0.0", true)
+}
+
+func (suite *SubcommandTestSuite) TestInstallConflictingDuplicateDriverConstraints() {
+	base := testBaseModel()
+	downloads := 0
+	base.downloadPkg = func(pkg dbc.PkgInfo) (*os.File, error) {
+		downloads++
+		return downloadTestPkg(pkg)
+	}
+
+	m := InstallCmd{
+		Drivers: []string{"test-driver-1<=1.0.0", "test-driver-1>=1.1.0"},
+		Level:   suite.configLevel,
+	}.GetModelCustom(base)
+	out := suite.runCmdErr(m)
+
+	suite.Contains(out, "conflicting constraints for driver `test-driver-1`: <=1.0.0 and >=1.1.0; no available version satisfies all constraints")
+	suite.Equal(0, downloads, "constraint conflicts should fail before installation starts")
+	suite.driverIsNotInstalled("test-driver-1")
+}
+
+func (suite *SubcommandTestSuite) TestInstallMultipleDriversJSON() {
+	requested := []string{"test-driver-1=1.0.0", "test-driver-only-pre=0.9.0-alpha.1"}
+	m := InstallCmd{
+		Drivers:            requested,
+		Level:              suite.configLevel,
+		Pre:                true,
+		JsonStreamProgress: true,
+	}.GetModelCustom(testBaseModel())
+	out := suite.runCmd(m)
+
+	var statuses []jsonschema.InstallStatus
+	var completed []jsonschema.InstallProgressEvent
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var env jsonschema.Envelope
+		suite.Require().NoError(json.Unmarshal([]byte(line), &env), "line must be valid JSON: %s", line)
+		switch env.Kind {
+		case "install.status":
+			var status jsonschema.InstallStatus
+			suite.Require().NoError(json.Unmarshal(env.Payload, &status))
+			statuses = append(statuses, status)
+		case "install.progress":
+			var event jsonschema.InstallProgressEvent
+			suite.Require().NoError(json.Unmarshal(env.Payload, &event))
+			if event.Event == "install.complete" {
+				completed = append(completed, event)
+			}
+		}
+	}
+
+	suite.Len(statuses, 2)
+	suite.Equal("test-driver-1", statuses[0].Driver)
+	suite.Equal("test-driver-only-pre", statuses[1].Driver)
+	suite.Len(completed, 2)
+	for _, event := range completed {
+		suite.Equal(requested, event.Drivers)
+	}
+}
+
+func (suite *SubcommandTestSuite) TestInstallMultipleDriversProgressView() {
+	drivers := []string{"test-driver-1", "test-driver-only-pre"}
+	items := []installItem{
+		{Driver: dbc.Driver{Path: drivers[0]}},
+		{Driver: dbc.Driver{Path: drivers[1]}},
+	}
+
+	m := InstallCmd{Drivers: drivers}.GetModelCustom(testBaseModel()).(progressiveInstallModel)
+	suite.Equal("Determining drivers to install...", m.View().Content)
+	m.installItems = items
+	m.width = 100
+	view := m.View().Content
+	suite.Contains(view, "Installing test-driver-1")
+	suite.Contains(view, "0/2")
+	suite.NotContains(view, "searching")
+	m.index = 1
+	view = m.View().Content
+	suite.Contains(view, "Installing test-driver-only-pre")
+	suite.Contains(view, "1/2")
+
+	m = InstallCmd{Drivers: drivers[:1]}.GetModelCustom(testBaseModel()).(progressiveInstallModel)
+	m.installItems = items[:1]
+	m.width = 100
+	view = m.View().Content
+	suite.Contains(view, "searching")
+	suite.NotContains(view, "Installing test-driver-1")
+}
+
 func (suite *SubcommandTestSuite) TestInstallDriverNotFound() {
 	m := InstallCmd{Driver: "foo", Level: suite.configLevel}.
 		GetModelCustom(testBaseModel())

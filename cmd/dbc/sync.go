@@ -20,7 +20,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,7 +27,6 @@ import (
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/columnar-tech/dbc"
 	"github.com/columnar-tech/dbc/config"
 	"github.com/columnar-tech/dbc/internal/jsonschema"
@@ -184,12 +182,6 @@ func loadDriverList(path string) (DriversList, error) {
 	return list, nil
 }
 
-type installItem struct {
-	Driver   dbc.Driver
-	Package  dbc.PkgInfo
-	Checksum string
-}
-
 func (s syncModel) createInstallList(list DriversList) ([]installItem, error) {
 	// Load the lock file if it exists
 	lf, err := loadLockFile(s.LockFilePath)
@@ -256,35 +248,20 @@ type alreadyInstalledDrvMsg struct {
 
 func (s syncModel) installDriver(cfg config.Config, item installItem) tea.Cmd {
 	return func() tea.Msg {
-		// TODO: Factor this out into config package, remove duplication with
-		// config.InstallDriver
-		var removedDriver *config.DriverInfo
-		if cfg.Exists {
-			// is driver installed already?
-			if drv, ok := cfg.Drivers[item.Driver.Path]; ok {
-				if item.Package.Version.Equal(drv.Version) {
-					chksum, err := checksum(drv.Driver.Shared.Get(config.PlatformTuple()))
-					if err != nil {
-						return fmt.Errorf("failed to compute checksum: %w", err)
-					}
-
-					if item.Checksum != "" {
-						if chksum != item.Checksum {
-							return fmt.Errorf("checksum mismatch for driver %s: %s != %s",
-								item.Driver.Path, chksum, item.Checksum)
-						}
-					} else {
-						item.Checksum = chksum
-					}
-
-					return alreadyInstalledDrvMsg{info: drv, item: item}
-				} else {
-					if err := config.UninstallDriver(cfg, drv); err != nil {
-						return fmt.Errorf("failed when deleting driver %s-%s: %w", drv.ID, drv.Version, err)
-					}
-					removedDriver = &drv
-				}
+		drv, installedChecksum, alreadyInstalled, err := inspectInstalledItem(cfg, item)
+		if err != nil {
+			return err
+		}
+		if alreadyInstalled {
+			if item.Checksum == "" {
+				item.Checksum = installedChecksum
 			}
+			return alreadyInstalledDrvMsg{info: drv, item: item}
+		}
+
+		var removedDriver *config.DriverInfo
+		if drv.ID != "" {
+			removedDriver = &drv
 		}
 
 		// avoid deadlock by doing this in a goroutine rather than during processing the tea.Msg
@@ -294,41 +271,18 @@ func (s syncModel) installDriver(cfg config.Config, item installItem) tea.Cmd {
 				prog.Send(fmt.Errorf("failed to download driver: %w", err))
 				return
 			}
-
-			var loc string
-			if loc, err = config.EnsureLocation(cfg); err != nil {
-				prog.Send(fmt.Errorf("failed to ensure config location: %w", err))
-				return
-			}
-
-			base := strings.TrimSuffix(path.Base(item.Package.Path.Path), ".tar.gz")
-			finalDir := filepath.Join(loc, base)
-			if err := os.MkdirAll(finalDir, 0o755); err != nil {
-				prog.Send(fmt.Errorf("failed to create driver directory %s: %w", finalDir, err))
-				return
-			}
-
-			output.Seek(0, io.SeekStart)
-			manifest, err := config.InflateTarball(output, finalDir)
+			manifest, err := extractInstallItem(cfg, item, output, removedDriver)
 			if err != nil {
-				prog.Send(fmt.Errorf("failed to extract tarball: %w", err))
+				prog.Send(err)
 				return
 			}
 
-			driverPath := filepath.Join(finalDir, manifest.Files.Driver)
-
-			manifest.DriverInfo.ID = item.Driver.Path
-			manifest.DriverInfo.Source = "dbc"
-			manifest.DriverInfo.Driver.Shared.Set(config.PlatformTuple(), driverPath)
-
-			if err := verifySignature(manifest, s.NoVerify); err != nil {
-				_ = os.RemoveAll(finalDir)
+			if err := verifyInstalledDriver(manifest, s.NoVerify); err != nil {
 				prog.Send(fmt.Errorf("failed to verify signature: %w", err))
 				return
 			}
-
-			if err := config.CreateManifest(cfg, manifest.DriverInfo); err != nil {
-				prog.Send(fmt.Errorf("failed to create driver manifest: %w", err))
+			if err := createDriverManifest(cfg, manifest.DriverInfo); err != nil {
+				prog.Send(err)
 				return
 			}
 
@@ -544,8 +498,10 @@ func (s syncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return s, tea.Batch(
 			progressCmd,
-			printCmd,
-			s.installDriver(s.cfg, s.installItems[s.index]),
+			tea.Sequence(
+				printCmd,
+				s.installDriver(s.cfg, s.installItems[s.index]),
+			),
 		)
 	case error:
 		s.status = 1
@@ -573,23 +529,12 @@ func (s syncModel) View() tea.View {
 	if n == 0 {
 		return tea.NewView("Determining drivers to install...")
 	}
-	w := lipgloss.Width(fmt.Sprintf("%d", n))
-
 	if s.done {
 		return tea.NewView("Done!\n")
 	}
 
-	driverCount := fmt.Sprintf(" %*d/%*d", w, s.index, w, n)
-
-	spin := s.spinner.View() + " "
-	prog := s.progress.View()
-	cellsAvail := max(0, s.width-lipgloss.Width(spin+prog+driverCount))
-
 	driverName := s.installItems[s.index].Driver.Path
-	info := lipgloss.NewStyle().MaxWidth(cellsAvail).Render("Installing " + driverName)
-
-	cellsRemaining := max(0, s.width-lipgloss.Width(spin+info+prog+driverCount))
-	gap := strings.Repeat(" ", max(0, cellsRemaining))
-
-	return tea.NewView(spin + info + gap + prog + driverCount)
+	return tea.NewView(renderInstallProgress(
+		s.spinner.View(), s.progress.View(), driverName, s.width, s.index, n,
+	))
 }

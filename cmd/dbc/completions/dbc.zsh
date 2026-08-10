@@ -13,7 +13,7 @@ function _dbc {
     case $state in
         subcommand)
             _values "dbc command" \
-                'install[Install a driver]' \
+                'install[Install one or more drivers]' \
                 'uninstall[Uninstall a driver]' \
                 'list[List all currently installed drivers]' \
                 'init[Create new driver list]' \
@@ -84,7 +84,7 @@ function _dbc_install_completions {
         '--pre[Allow implicit installation of pre-release versions]' \
         '(-l)--level[installation level]: :(user system)' \
         '(--level)-l[installation level]: :(user system)' \
-        ':driver name: '
+        '*:driver name: '
 }
 
 function _dbc_uninstall_completions {

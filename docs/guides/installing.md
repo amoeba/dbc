@@ -66,6 +66,12 @@ $ dbc install mysql
 Installed mysql 0.1.0 to /Users/user/Library/Application Support/ADBC/Drivers
 ```
 
+You can install multiple drivers in one command, and each driver can have its own version constraint:
+
+```console
+$ dbc install "mysql>=1,<2" postgresql
+```
+
 To confirm the driver is installed, run [`dbc list`](../reference/cli.md#list):
 
 ```console
