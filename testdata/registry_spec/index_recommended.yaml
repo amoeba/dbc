@@ -1,0 +1,24 @@
+name: My Registry
+drivers:
+- name: My Driver
+  description: A description of the driver
+  license: MIT
+  path: my_driver
+  urls:
+  - https://example.com
+  docs_url: https://example.com/docs
+  pkginfo:
+  - version: 0.1.0
+    packages:
+    - platform: linux_amd64
+      url: my_driver/0.1.0/my_driver_linux_amd64-0.1.0.tar.gz
+    - platform: linux_arm64
+      url: my_driver/0.1.0/my_driver_linux_arm64-0.1.0.tar.gz
+    - platform: macos_amd64
+      url: my_driver/0.1.0/my_driver_macos_amd64-0.1.0.tar.gz
+    - platform: macos_arm64
+      url: my_driver/0.1.0/my_driver_macos_arm64-0.1.0.tar.gz
+    - platform: windows_amd64
+      url: my_driver/0.1.0/my_driver_windows_amd64-0.1.0.tar.gz
+    - platform: windows_arm64
+      url: my_driver/0.1.0/my_driver_windows_arm64-0.1.0.tar.gz

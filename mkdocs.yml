@@ -62,6 +62,7 @@ nav:
       - Commands: reference/cli.md
       - Config Level: reference/config_level.md
       - Driver List: reference/driver_list.md
+      - Driver Registry: reference/driver_registry.md
       - Supported Platforms: reference/supported_platforms.md
       - Analytics: reference/analytics.md
 theme:

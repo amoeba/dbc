@@ -35,3 +35,7 @@ ADBC is [Apache Arrow ADBC](http://arrow.apache.org/adbc), a cross-platform, dat
 ## Who makes dbc?
 
 dbc is built and maintained by [Columnar](https://columnar.tech).
+
+## Can I download drivers directly from Columnar's CDN?
+
+Yes, though we ask that you set a custom HTTP user agent in our scripts or tools to help us understand who's using the CDN. See [Driver Registry Guide](../reference/driver_registry.md) for details on how to do this.

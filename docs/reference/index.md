@@ -19,5 +19,6 @@ limitations under the License.
 - [Commands](./cli.md)
 - [Config level](./config_level.md)
 - [Driver List](./driver_list.md)
+- [Driver Registry](./driver_registry.md)
 - [Supported Platforms](./supported_platforms.md)
 - [Analytics](./analytics.md)

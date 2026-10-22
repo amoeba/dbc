@@ -1,0 +1,12 @@
+manifest_version = 1
+name = "My Driver"
+publisher = "My Company"
+license = "MIT"
+version = "0.1.0"
+
+[ADBC]
+version = "1.1.0"
+
+[Files]
+driver = "libmy_driver.so"
+signature = "libmy_driver.so.sig"

@@ -1,0 +1,6 @@
+drivers:
+- path: my_driver
+  pkginfo:
+  - version: 0.1.0
+    packages:
+    - platform: linux_amd64
